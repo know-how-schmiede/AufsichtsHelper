@@ -10,6 +10,46 @@
   white-space: nowrap;
 }
 
+.sort-arrows {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 4px;
+  line-height: 1;
+}
+
+.sort-arrow {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  opacity: 0.4;
+  text-decoration: none;
+}
+
+.sort-arrow.up {
+  border-bottom: 6px solid #6c757d;
+}
+
+.sort-arrow.down {
+  border-top: 6px solid #6c757d;
+}
+
+.sort-arrow.is-active.up {
+  border-bottom-color: #212529;
+  opacity: 1;
+}
+
+.sort-arrow.is-active.down {
+  border-top-color: #212529;
+  opacity: 1;
+}
+
+.sort-arrow:hover {
+  opacity: 0.8;
+}
+
 .footer {
   background-color: #ffffff;
   border-top: 1px solid #e5e5e5;

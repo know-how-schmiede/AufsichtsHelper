@@ -8,6 +8,46 @@ Die aktuelle App-Version wird in `app/VERSION` gepflegt.
 
 ## Historie
 
+### Version 0.1.30
+
+- Vorschau: Anzahl der Aufsichts-Namen im Label angezeigt
+
+### Version 0.1.29
+
+- Hilfe- und Datenschutzseiten hinzugefuegt
+
+### Version 0.1.28
+
+- Navigation: Personen/Aliases aus der Navbar entfernt
+
+### Version 0.1.27
+
+- Vorschau: Sortierpfeile im PrintFleet2-Stil
+
+### Version 0.1.26
+
+- Vorschau: Sortierbuttons als Pfeile statt Text
+
+### Version 0.1.25
+
+- Vorschau: Sortierbuttons und Trefferhinweis fuer gefilterte Liste
+
+### Version 0.1.24
+
+- Vorschau: Mehrzeilige Liste mit echten <br>-Zeilenumbruechen
+
+### Version 0.1.23
+
+- Vorschau: Pruefer/Aufsicht/Raum als mehrzeilige Liste
+
+### Version 0.1.22
+
+- Vorschau: ICS-Paket Button erst nach Filterung aktiv
+
+### Version 0.1.21
+
+- Setup: Git-Clone ohne Login (GIT_TERMINAL_PROMPT=0) in Debian-Skripten dokumentiert
+
 ### Version 0.1.20
 
 - Setup: Debian 13 LXC Installationsskripte und Anleitung im setup/ Ordner

@@ -37,7 +37,7 @@ fi
 
 systemctl stop "$SERVICE_NAME" || true
 
-git -C "$APP_DIR" pull --ff-only
+GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false git -C "$APP_DIR" pull --ff-only
 "$APP_PY" -m pip install -r "$APP_DIR/requirements.txt"
 pushd "$APP_DIR" >/dev/null
 "$APP_PY" -m flask --app run.py db upgrade

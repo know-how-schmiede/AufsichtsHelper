@@ -21,12 +21,17 @@ from ..excel import (
     EXPECTED_COLUMNS,
     extract_aufsichten,
     filter_rows_by_aufsicht,
+    display_value,
     normalize_name,
     parse_date_value,
+    parse_duration_minutes,
+    parse_time_value,
     prepare_event_data,
     preview_rows,
     read_excel,
     row_fingerprint,
+    split_display_names,
+    split_display_rooms,
     split_names,
 )
 from ..extensions import db
@@ -159,6 +164,16 @@ def index():
     )
 
 
+@bp.route("/help", methods=["GET"])
+def help():
+    return render_template("help.html", title="Hilfe")
+
+
+@bp.route("/privacy", methods=["GET"])
+def privacy():
+    return render_template("privacy.html", title="Datenschutz")
+
+
 @bp.route("/preview", methods=["GET"])
 def preview():
     upload_path = get_upload_path()
@@ -181,9 +196,55 @@ def preview():
     selected = request.args.get("aufsicht") or (
         aufsicht_names[0] if aufsicht_names else ""
     )
+    filter_applied = bool(request.args.get("aufsicht"))
+    sort_key = request.args.get("sort") or ""
+    sort_dir = request.args.get("dir") or "asc"
+    if sort_dir not in ("asc", "desc"):
+        sort_dir = "asc"
     filtered_rows = filter_rows_by_aufsicht(df, selected) if selected else []
 
     preview_columns = [col for col in EXPECTED_COLUMNS if col != "Ablösung"]
+    sortable_columns = [
+        "Pr\u00fcfungsname",
+        "Datum",
+        "Startzeit",
+        "Dauer",
+        "Pr\u00fcfer",
+        "Raum",
+    ]
+
+    if sort_key in sortable_columns:
+        def sort_value(row):
+            try:
+                if sort_key == "Datum":
+                    return (0, parse_date_value(row.get("Datum")))
+                if sort_key == "Startzeit":
+                    return (0, parse_time_value(row.get("Startzeit")))
+                if sort_key == "Dauer":
+                    return (0, parse_duration_minutes(row.get("Dauer")))
+                if sort_key == "Pr\u00fcfer":
+                    items = split_display_names(row.get("Pr\u00fcfer"))
+                    return (0, " ".join(items).casefold())
+                if sort_key == "Raum":
+                    items = split_display_rooms(row.get("Raum"))
+                    return (0, " ".join(items).casefold())
+                value = display_value(row.get(sort_key)).casefold()
+                return (0, value)
+            except ValueError:
+                return (1, "")
+
+        filtered_rows = sorted(
+            filtered_rows,
+            key=sort_value,
+            reverse=sort_dir == "desc",
+        )
+
+    formatted_rows = preview_rows(filtered_rows)
+    multiline_columns = ["Pr\u00fcfer", "Aufsicht", "Raum"]
+    for row in formatted_rows:
+        row["Pr\u00fcfer"] = split_display_names(row.get("Pr\u00fcfer"))
+        row["Aufsicht"] = split_display_names(row.get("Aufsicht"))
+        row["Raum"] = split_display_rooms(row.get("Raum"))
 
     return render_template(
         "preview.html",
@@ -192,8 +253,13 @@ def preview():
         filtered_count=len(filtered_rows),
         aufsicht_names=aufsicht_names,
         selected_aufsicht=selected,
-        preview_rows=preview_rows(filtered_rows),
+        preview_rows=formatted_rows,
         missing_contacts=[],
+        filter_applied=filter_applied,
+        multiline_columns=multiline_columns,
+        sortable_columns=sortable_columns,
+        sort_key=sort_key,
+        sort_dir=sort_dir,
     )
 
 

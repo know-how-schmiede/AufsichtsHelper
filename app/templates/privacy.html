@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <div class="mb-4">
+    <h1 class="h4">Datenschutz</h1>
+    <p class="text-muted mb-0">Hinweise zur Verarbeitung von Daten in AufsichtsHelper.</p>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h6">Welche Daten werden verarbeitet?</h2>
+      <p>
+        Die Anwendung verarbeitet die Inhalte der hochgeladenen Excel-Datei,
+        insbesondere Pruefungsname, Datum, Startzeit, Dauer, Pruefer, Aufsicht und Raum.
+      </p>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h6">Welche Daten werden gespeichert?</h2>
+      <ul class="mb-0">
+        <li>Uploads werden serverseitig im Ordner <code>instance/uploads</code> abgelegt.</li>
+        <li>Erzeugte ZIP-Dateien werden im Ordner <code>instance/exports</code> gespeichert.</li>
+        <li>Die SQLite-Datenbank liegt standardmaessig in <code>instance/app.db</code>.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h6">Datenuebertragung</h2>
+      <p>
+        In der aktuellen Version erfolgt kein Versand per E-Mail.
+        Es findet standardmaessig keine Uebermittlung an Dritte statt.
+      </p>
+    </div>
+  </div>
+{% endblock %}

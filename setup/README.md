@@ -6,9 +6,10 @@ Alle Schritte werden als root ausgefuehrt.
 ## 1) Repo holen
 
 ```bash
-apt update
+apt update -y
+apt upgrade -y
 apt install -y git
-git clone https://github.com/know-how-schmiede/AufsichtsHelper /opt/aufsichtshelper
+git clone https://github.com/know-how-schmiede/AufsichtsHelper.git /opt/aufsichtshelper
 ```
 
 ## 2) Scripts ausfuehrbar machen
@@ -25,6 +26,13 @@ chmod +x setupAufsichtsHelper setupAufsichtsHelperService updateAufsichtsHelperS
 ```
 
 Das Script fragt nach ein paar Parametern und nutzt Standardwerte, wenn nichts eingegeben wird.
+
+Falls GitHub nach einem Passwort fragt, ist etwas mit der URL oder dem Terminal-Input schiefgelaufen.
+Nimm die .git-URL und nutze optional:
+
+```bash
+GIT_TERMINAL_PROMPT=0 git clone https://github.com/know-how-schmiede/AufsichtsHelper.git /opt/aufsichtshelper
+```
 
 ## 4) Testlauf (ohne Service)
 

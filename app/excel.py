@@ -110,6 +110,34 @@ def split_names(value):
     return [text]
 
 
+def split_display_names(value):
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+
+    pattern = (
+        r"[A-Za-z\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df-]+"
+        r",\s*[A-Za-z\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df-]+"
+    )
+    matches = [match.strip() for match in re.findall(pattern, text) if match.strip()]
+    if len(matches) >= 2:
+        return matches
+
+    return [name.strip() for name in split_names(text) if name and name.strip()]
+
+
+def split_display_rooms(value):
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    parts = re.split(r"[;,\n\r/]+|\s+", text)
+    return [part.strip() for part in parts if part and part.strip()]
+
+
 def name_candidates(value):
     names = split_names(value)
     return [normalize_name(name) for name in names if name]

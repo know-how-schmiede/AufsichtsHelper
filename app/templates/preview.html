@@ -8,7 +8,7 @@
 
   <form method="get" class="row g-2 align-items-end mb-3">
     <div class="col-md-6">
-      <label class="form-label">Aufsicht</label>
+      <label class="form-label">Aufsicht ({{ aufsicht_names | length }})</label>
       <select class="form-select" name="aufsicht" required>
         {% for name in aufsicht_names %}
           <option value="{{ name }}" {% if name == selected_aufsicht %}selected{% endif %}>{{ name }}</option>
@@ -21,7 +21,7 @@
   </form>
 
   <div class="mb-3 text-muted">
-    Gefilterte Zeilen: {{ filtered_count }}
+    Es wurden {{ filtered_count }} Pruefungen fuer die Aufsicht {{ selected_aufsicht }} gefunden.
   </div>
 
   {% if missing_contacts %}
@@ -43,7 +43,12 @@
           <input class="form-check-input" type="checkbox" name="force_resend" value="1" id="forceResend">
           <label class="form-check-label" for="forceResend">Neu erstellen (Force resend)</label>
         </div>
-        <button class="btn btn-success" type="submit">ICS-Paket erstellen</button>
+        <button class="btn btn-success" type="submit" {% if not filter_applied %}disabled aria-disabled="true"{% endif %}>
+          ICS-Paket erstellen
+        </button>
+        {% if not filter_applied %}
+          <div class="form-text">Bitte zuerst filtern, dann kann das ICS-Paket erstellt werden.</div>
+        {% endif %}
       </form>
     </div>
   </div>
@@ -54,7 +59,29 @@
         <thead>
           <tr>
             {% for col in expected_columns %}
-              <th>{{ col }}</th>
+              <th>
+                <div class="d-flex align-items-center gap-2">
+                  <span>{{ col }}</span>
+                  {% if col in sortable_columns %}
+                    {% set asc_active = sort_key == col and sort_dir == 'asc' %}
+                    {% set desc_active = sort_key == col and sort_dir == 'desc' %}
+                    <div class="sort-arrows" role="group">
+                      <a
+                        class="sort-arrow up {% if asc_active %}is-active{% endif %}"
+                        href="{{ url_for('main.preview', aufsicht=selected_aufsicht, sort=col, dir='asc') }}"
+                        aria-label="Aufsteigend"
+                        title="Aufsteigend"
+                      ></a>
+                      <a
+                        class="sort-arrow down {% if desc_active %}is-active{% endif %}"
+                        href="{{ url_for('main.preview', aufsicht=selected_aufsicht, sort=col, dir='desc') }}"
+                        aria-label="Absteigend"
+                        title="Absteigend"
+                      ></a>
+                    </div>
+                  {% endif %}
+                </div>
+              </th>
             {% endfor %}
           </tr>
         </thead>
@@ -62,7 +89,18 @@
           {% for row in preview_rows %}
             <tr>
               {% for col in expected_columns %}
-                <td>{{ row[col] }}</td>
+                <td>
+                  {% if col in multiline_columns %}
+                    {% set items = row[col] %}
+                    {% if items %}
+                      {% for item in items %}
+                        {{ item }}{% if not loop.last %}<br>{% endif %}
+                      {% endfor %}
+                    {% endif %}
+                  {% else %}
+                    {{ row[col] }}
+                  {% endif %}
+                </td>
               {% endfor %}
             </tr>
           {% endfor %}

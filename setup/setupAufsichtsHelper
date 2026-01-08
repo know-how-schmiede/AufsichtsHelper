@@ -22,14 +22,14 @@ prompt() {
   printf -v "$var_name" "%s" "$input"
 }
 
-prompt REPO_URL "Repo URL" "https://github.com/know-how-schmiede/AufsichtsHelper"
+prompt REPO_URL "Repo URL" "https://github.com/know-how-schmiede/AufsichtsHelper.git"
 prompt APP_DIR "Installationsverzeichnis" "/opt/aufsichtshelper"
 prompt APP_USER "Linux-User fuer den Service" "aufsichtshelper"
 prompt APP_BASE_URL "APP_BASE_URL" "http://localhost:5000"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y git python3 python3-venv python3-pip
+apt-get install -y git ca-certificates python3 python3-venv python3-pip
 
 if ! id "$APP_USER" >/dev/null 2>&1; then
   adduser --system --group --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
@@ -39,13 +39,13 @@ mkdir -p "$(dirname "$APP_DIR")"
 
 if [ -d "$APP_DIR/.git" ]; then
   echo "Repo vorhanden, aktualisiere..."
-  git -C "$APP_DIR" pull --ff-only
+  GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false git -C "$APP_DIR" pull --ff-only
 else
   if [ -d "$APP_DIR" ] && [ -n "$(ls -A "$APP_DIR")" ]; then
     echo "Verzeichnis $APP_DIR ist nicht leer. Bitte anderes Verzeichnis waehlen."
     exit 1
   fi
-  git clone "$REPO_URL" "$APP_DIR"
+  GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false git clone "$REPO_URL" "$APP_DIR"
 fi
 
 python3 -m venv "$APP_DIR/.venv"

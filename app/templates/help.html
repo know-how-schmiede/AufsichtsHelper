@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <div class="mb-4">
+    <h1 class="h4">Hilfe</h1>
+    <p class="text-muted mb-0">Kurzanleitung fuer die Nutzung von AufsichtsHelper.</p>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h6">Aufgabe von AufsichtsHelper</h2>
+      <p>
+        AufsichtsHelper erstellt fuer eine ausgewaehlte Aufsicht iCal-Termine
+        aus einem Pruefungsplan (Excel) und stellt diese als ZIP-Download bereit.
+      </p>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h6">Upload der Excel-Datei</h2>
+      <ul class="mb-0">
+        <li>Erwartet wird eine .xlsx Datei mit Pruefungsdaten.</li>
+        <li>Die Spalten muessen die benoetigten Inhalte abbilden (z.B. Pruefungsname, Datum, Startzeit, Dauer, Pruefer, Aufsicht, Raum).</li>
+        <li>Optional kannst du beim Upload einen eigenen Kalendernamen setzen.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h6">Suche nach der Aufsicht</h2>
+      <ul class="mb-0">
+        <li>Nach dem Upload erscheint eine Vorschau mit Auswahlfeld "Aufsicht".</li>
+        <li>Waehle den gewuenschten Namen aus und klicke auf "Filtern".</li>
+        <li>Die Liste zeigt nur Pruefungen, in denen die ausgewaehlte Aufsicht enthalten ist.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <h2 class="h6">Optionen und Download</h2>
+      <ul class="mb-0">
+        <li><strong>Neu erstellen</strong>: erstellt die iCal-Dateien auch dann neu, wenn bereits ein Eintrag erzeugt wurde.</li>
+        <li><strong>ICS-Paket erstellen</strong>: erzeugt ein ZIP mit einer iCal-Datei pro Pruefung fuer die ausgewaehlte Aufsicht.</li>
+        <li>Nach dem Download ZIP entpacken und die .ics Dateien im Kalender importieren (z.B. Outlook, Apple Kalender, Google Kalender).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="alert alert-warning">
+    Hinweis: Dieses Tool ist noch im Entwicklungsstadium. Es koennen Fehler auftreten.
+    Das Projekt wurde mit Unterstuetzung von KI entwickelt.
+  </div>
+
+  <div class="mt-3">
+    <a href="{{ url_for('main.privacy') }}">Datenschutz-Hinweis</a>
+  </div>
+{% endblock %}
