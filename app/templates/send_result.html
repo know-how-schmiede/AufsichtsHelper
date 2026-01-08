@@ -1,19 +1,30 @@
 ﻿{% extends 'base.html' %}
 
 {% block content %}
-  <h1 class="h4 mb-3">Versand-Ergebnis</h1>
+  <h1 class="h4 mb-3">Download-Ergebnis</h1>
 
   <div class="mb-3 text-muted">Aufsicht: {{ selected_aufsicht }}</div>
+
+  {% if download_filename %}
+    <div class="alert alert-success">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+        <div>Das ICS-Paket steht zum Download bereit.</div>
+        <a class="btn btn-success" href="{{ url_for('main.download', filename=download_filename) }}">Download ZIP</a>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-warning">Keine ICS-Dateien erzeugt.</div>
+  {% endif %}
 
   <div class="row g-3">
     <div class="col-md-4">
       <div class="card border-success">
         <div class="card-body">
-          <h2 class="h6 text-success">Gesendet ({{ results.sent|length }})</h2>
-          {% if results.sent %}
+          <h2 class="h6 text-success">Erzeugt ({{ results.generated|length }})</h2>
+          {% if results.generated %}
             <ul class="small mb-0">
-              {% for item in results.sent %}
-                <li>{{ item.name }} - {{ item.role }} - {{ item.email }}</li>
+              {% for item in results.generated %}
+                <li>{{ item.name }} - {{ item.role }} - {{ item.email }} ({{ item.reason }})</li>
               {% endfor %}
             </ul>
           {% else %}

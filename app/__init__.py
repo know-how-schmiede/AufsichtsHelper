@@ -13,6 +13,7 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    os.makedirs(app.config["EXPORT_FOLDER"], exist_ok=True)
     app.config["APP_VERSION"] = _load_app_version(app.root_path)
 
     db.init_app(app)

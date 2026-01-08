@@ -1,14 +1,17 @@
-﻿import os
+import os
 import uuid
+import zipfile
 from datetime import datetime
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -19,18 +22,18 @@ from ..excel import (
     extract_aufsichten,
     filter_rows_by_aufsicht,
     normalize_name,
+    parse_date_value,
     prepare_event_data,
     preview_rows,
     read_excel,
     row_fingerprint,
+    split_names,
 )
 from ..extensions import db
 from ..ics import build_event_uid, build_ics_event, get_uid_domain
-from ..mailer import build_email_body, send_invite
 from ..models import MailLog, Person, PersonAlias
 
 bp = Blueprint("main", __name__)
-
 
 ALLOWED_EXTENSIONS = {".xlsx"}
 
@@ -76,6 +79,37 @@ def parse_missing_columns(error_message):
     return [col.strip() for col in parts.split(",") if col.strip()]
 
 
+def build_bundle_filename(aufsicht_name):
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    base_name = f"ical_{aufsicht_name}_{timestamp}.zip"
+    safe_name = secure_filename(base_name) or "ical_bundle.zip"
+    unique_prefix = uuid.uuid4().hex
+    return f"{unique_prefix}_{safe_name}"
+
+
+def default_calendar_name(rows=None):
+    year = datetime.now().year
+    if rows:
+        for row in rows:
+            try:
+                year = parse_date_value(row.get("Datum")).year
+                break
+            except ValueError:
+                continue
+    return f"Pr\u00fcfungsaufsicht_{year}"
+
+
+def store_calendar_name(value):
+    session["calendar_name"] = value
+
+
+def get_calendar_name(rows=None):
+    name = (session.get("calendar_name") or "").strip()
+    if name:
+        return name
+    return default_calendar_name(rows)
+
+
 @bp.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -94,7 +128,7 @@ def index():
         store_upload_path(unique_name)
 
         try:
-            read_excel(upload_path)
+            rows = read_excel(upload_path)
         except ValueError as exc:
             missing = parse_missing_columns(str(exc))
             if missing:
@@ -111,9 +145,18 @@ def index():
                 missing=[],
             )
 
+        calendar_name = (request.form.get("calendar_name") or "").strip()
+        if not calendar_name:
+            calendar_name = default_calendar_name(rows)
+        store_calendar_name(calendar_name)
+
         return redirect(url_for("main.preview"))
 
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        calendar_name=session.get("calendar_name", ""),
+        default_calendar_name=default_calendar_name(),
+    )
 
 
 @bp.route("/preview", methods=["GET"])
@@ -135,43 +178,22 @@ def preview():
         )
 
     aufsicht_names = extract_aufsichten(df)
-    selected = request.args.get("aufsicht") or (aufsicht_names[0] if aufsicht_names else "")
+    selected = request.args.get("aufsicht") or (
+        aufsicht_names[0] if aufsicht_names else ""
+    )
     filtered_rows = filter_rows_by_aufsicht(df, selected) if selected else []
 
-    person_index = build_person_index()
-    missing_contacts = []
-    seen_missing = set()
-
-    def register_missing(name, reason):
-        if not name:
-            return
-        key = (normalize_name(name), reason)
-        if key in seen_missing:
-            return
-        seen_missing.add(key)
-        missing_contacts.append({"name": name, "reason": reason})
-
-    for row in filtered_rows:
-        for role, field in ("aufsicht", "Aufsicht"), ("abloesung", "Ablösung"):
-            name = row.get(field)
-            if not name:
-                continue
-            person = person_index.get(normalize_name(name))
-            if not person:
-                register_missing(name, "Person nicht gefunden")
-                continue
-            if not person.email:
-                register_missing(name, "Keine E-Mail hinterlegt")
+    preview_columns = [col for col in EXPECTED_COLUMNS if col != "Ablösung"]
 
     return render_template(
         "preview.html",
-        expected_columns=EXPECTED_COLUMNS,
+        expected_columns=preview_columns,
         total_rows=len(df),
         filtered_count=len(filtered_rows),
         aufsicht_names=aufsicht_names,
         selected_aufsicht=selected,
         preview_rows=preview_rows(filtered_rows),
-        missing_contacts=missing_contacts,
+        missing_contacts=[],
     )
 
 
@@ -199,11 +221,17 @@ def send():
             message=str(exc),
             missing=missing,
         )
+
     filtered_rows = filter_rows_by_aufsicht(df, aufsicht_name)
     person_index = build_person_index()
 
-    results = {"sent": [], "skipped": [], "errors": []}
+    results = {"generated": [], "skipped": [], "errors": []}
     uid_domain = get_uid_domain(current_app.config.get("APP_BASE_URL", ""))
+    calendar_name = get_calendar_name(df)
+    generated_files = []
+    seen_exports = set()
+
+    target_norm = normalize_name(aufsicht_name)
 
     for idx, row in enumerate(filtered_rows, start=1):
         try:
@@ -222,63 +250,65 @@ def send():
             continue
 
         row_fp = event_data["row_fingerprint"]
-        label = f"{event_data['pruefungsname']} ({event_data['datum'].isoformat()} {event_data['startzeit'].strftime('%H:%M')})"
+        label = (
+            f"{event_data['pruefungsname']} ({event_data['datum'].isoformat()} "
+            f"{event_data['startzeit'].strftime('%H:%M')})"
+        )
 
-        for role, field in ("aufsicht", "Aufsicht"), ("abloesung", "Ablösung"):
-            name = row.get(field)
-            if not name:
-                if role == "abloesung":
-                    continue
-                results["errors"].append(
+        role = "aufsicht"
+        names = split_names(row.get("Aufsicht"))
+        names = [name for name in names if normalize_name(name) == target_norm]
+        if not names:
+            results["errors"].append(
+                {
+                    "row": idx,
+                    "name": label,
+                    "role": role,
+                    "email": "-",
+                    "reason": "Aufsicht fehlt",
+                }
+            )
+            continue
+
+        for name in names:
+            name_key = normalize_name(name)
+            export_key = (row_fp, role, name_key)
+            if export_key in seen_exports:
+                results["skipped"].append(
                     {
                         "row": idx,
                         "name": label,
                         "role": role,
                         "email": "-",
-                        "reason": "Aufsicht fehlt",
+                        "reason": "Duplikat im Import",
                     }
                 )
                 continue
-
+            seen_exports.add(export_key)
             person = person_index.get(normalize_name(name))
-            if not person:
-                results["errors"].append(
-                    {
-                        "row": idx,
-                        "name": label,
-                        "role": role,
-                        "email": "-",
-                        "reason": f"Person '{name}' nicht gefunden",
-                    }
-                )
-                continue
-            if not person.email:
-                results["errors"].append(
-                    {
-                        "row": idx,
-                        "name": label,
-                        "role": role,
-                        "email": "-",
-                        "reason": f"Keine E-Mail fuer '{name}'",
-                    }
-                )
-                continue
+            recipient_email = ""
+            if person and person.email:
+                recipient_email = person.email
 
-            recipient_email = person.email
-            existing = MailLog.query.filter_by(
-                row_fingerprint=row_fp,
-                role=role,
-                recipient_email=recipient_email,
-                status="sent",
-            ).first()
+            existing = None
+            if recipient_email:
+                existing = (
+                    MailLog.query.filter_by(
+                        row_fingerprint=row_fp,
+                        role=role,
+                        recipient_email=recipient_email,
+                    )
+                    .filter(MailLog.status.in_(["sent", "generated"]))
+                    .first()
+                )
             if existing and not force_resend:
                 results["skipped"].append(
                     {
                         "row": idx,
                         "name": label,
                         "role": role,
-                        "email": recipient_email,
-                        "reason": "Bereits gesendet",
+                        "email": recipient_email or "-",
+                        "reason": "Bereits erstellt",
                     }
                 )
                 continue
@@ -287,65 +317,106 @@ def send():
             event_data["row_fingerprint"] = row_fp
             try:
                 ics_bytes, event_uid = build_ics_event(
-                    event_data, role, uid_domain, event_uid
+                    event_data,
+                    role,
+                    uid_domain,
+                    event_uid,
+                    calendar_name=calendar_name,
                 )
-                subject = (
-                    f"Ablösung: {event_data['pruefungsname']}"
-                    if role == "abloesung"
-                    else f"Aufsicht: {event_data['pruefungsname']}"
+                prefix = "Aufsicht"
+                date_str = event_data["datum"].strftime("%Y-%m-%d")
+                time_str = event_data["startzeit"].strftime("%H-%M")
+                base_name = (
+                    f"{prefix}_{date_str}_{time_str}_"
+                    f"{event_data['pruefungsname']}_{name}.ics"
                 )
-                body = build_email_body(event_data, role)
-                ics_filename = secure_filename(f"{role}_{row_fp[:12]}.ics")
-                send_invite(recipient_email, subject, body, ics_bytes, ics_filename)
+                ics_filename = secure_filename(base_name)
+                if not ics_filename:
+                    ics_filename = f"{prefix}_{row_fp[:12]}.ics"
 
-                db.session.add(
-                    MailLog(
-                        event_uid=event_uid,
-                        role=role,
-                        recipient_email=recipient_email,
-                        row_fingerprint=row_fp,
-                        sent_at=datetime.utcnow(),
-                        status="sent",
-                        error=None,
-                    )
-                )
-                db.session.commit()
+                generated_files.append((ics_filename, ics_bytes))
+                if not person:
+                    reason = "ICS erzeugt (Stammdaten fehlen)"
+                elif not recipient_email:
+                    reason = "ICS erzeugt (E-Mail fehlt)"
+                else:
+                    reason = "ICS erzeugt"
 
-                results["sent"].append(
+                results["generated"].append(
                     {
                         "row": idx,
                         "name": label,
                         "role": role,
-                        "email": recipient_email,
-                        "reason": "Gesendet",
+                        "email": recipient_email or "-",
+                        "reason": reason,
                     }
                 )
-            except Exception as exc:
-                db.session.add(
-                    MailLog(
-                        event_uid=event_uid,
-                        role=role,
-                        recipient_email=recipient_email,
-                        row_fingerprint=row_fp,
-                        sent_at=datetime.utcnow(),
-                        status="error",
-                        error=str(exc),
+
+                if recipient_email:
+                    db.session.add(
+                        MailLog(
+                            event_uid=event_uid,
+                            role=role,
+                            recipient_email=recipient_email,
+                            row_fingerprint=row_fp,
+                            sent_at=datetime.utcnow(),
+                            status="generated",
+                            error=None,
+                        )
                     )
-                )
-                db.session.commit()
+                    db.session.commit()
+            except Exception as exc:
+                if recipient_email:
+                    db.session.add(
+                        MailLog(
+                            event_uid=event_uid,
+                            role=role,
+                            recipient_email=recipient_email,
+                            row_fingerprint=row_fp,
+                            sent_at=datetime.utcnow(),
+                            status="error",
+                            error=str(exc),
+                        )
+                    )
+                    db.session.commit()
                 results["errors"].append(
                     {
                         "row": idx,
                         "name": label,
                         "role": role,
-                        "email": recipient_email,
+                        "email": recipient_email or "-",
                         "reason": str(exc),
                     }
                 )
+
+    download_filename = None
+    if generated_files:
+        export_dir = current_app.config["EXPORT_FOLDER"]
+        os.makedirs(export_dir, exist_ok=True)
+        download_filename = build_bundle_filename(aufsicht_name)
+        bundle_path = os.path.join(export_dir, download_filename)
+
+        with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED) as bundle:
+            for filename, payload in generated_files:
+                bundle.writestr(filename, payload)
 
     return render_template(
         "send_result.html",
         selected_aufsicht=aufsicht_name,
         results=results,
+        download_filename=download_filename,
     )
 
+
+@bp.route("/download/<path:filename>")
+def download(filename):
+    safe_name = secure_filename(filename)
+    if not safe_name:
+        abort(404)
+
+    export_dir = current_app.config["EXPORT_FOLDER"]
+    bundle_path = os.path.join(export_dir, safe_name)
+    if not os.path.exists(bundle_path):
+        abort(404)
+
+    return send_from_directory(export_dir, safe_name, as_attachment=True)

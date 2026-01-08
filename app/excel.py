@@ -1,28 +1,85 @@
-﻿import hashlib
+import hashlib
 import re
+import zipfile
 from datetime import date, datetime, time, timedelta
+from xml.etree import ElementTree as ET
 
-import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 EXPECTED_COLUMNS = [
-    "Prüfungsname",
+    "Pr\u00fcfungsname",
     "Datum",
     "Startzeit",
     "Dauer",
-    "Prüfer",
+    "Pr\u00fcfer",
     "Aufsicht",
-    "Ablösung",
+    "Abl\u00f6sung",
     "Raum",
 ]
 
+COLUMN_ALIASES = {
+    "Pr\u00fcfungsname": [
+        "Pr\u00fcfungsname",
+        "Fach",
+        "Modul LV-Nr.",
+        "Modul",
+        "LV-Nr.",
+        "EDV-Nr.",
+    ],
+    "Datum": ["Datum", "Pr\u00fcfungstag", "Tag"],
+    "Startzeit": ["Startzeit", "Uhrzeit"],
+    "Dauer": ["Dauer"],
+    "Pr\u00fcfer": ["Pr\u00fcfer"],
+    "Aufsicht": ["Aufsicht"],
+    "Abl\u00f6sung": [
+        "Abl\u00f6sung",
+        "Abl\u00f6sung/ Beisitzer",
+        "Abl\u00f6sung/Beisitzer",
+    ],
+    "Raum": ["Raum", "R\u00e4ume", "R\u00e4ume vorgezogen"],
+}
+
 
 def read_excel(file_path):
-    df = pd.read_excel(file_path, engine="openpyxl", dtype=object)
-    df = df.where(pd.notnull(df), None)
-    missing = [col for col in EXPECTED_COLUMNS if col not in df.columns]
+    rows = None
+    try:
+        rows = _read_rows_openpyxl(file_path)
+    except Exception as exc:
+        try:
+            rows = _read_rows_fallback(file_path)
+        except Exception:
+            if isinstance(exc, InvalidFileException):
+                raise ValueError(
+                    "Excel-Datei konnte nicht gelesen werden (defektes XML). "
+                    "Bitte die Datei in Excel/LibreOffice oeffnen und als .xlsx neu speichern."
+                ) from exc
+            raise ValueError(f"Excel-Datei konnte nicht gelesen werden: {exc}") from exc
+
+    if not rows:
+        raise ValueError("Excel-Datei ist leer")
+
+    header_row_index, headers, score = _detect_header_row(rows)
+    if score <= 0:
+        raise ValueError(
+            "Keine gueltige Kopfzeile gefunden. Bitte pruefen, ob die erste Zeile "
+            "die Spaltenueberschriften enthaelt."
+        )
+
+    missing = [
+        field for field in EXPECTED_COLUMNS if not _resolve_indices(headers, field)
+    ]
     if missing:
         raise ValueError(f"Missing columns: {', '.join(missing)}")
-    return df
+
+    data_rows = []
+    for row in rows[header_row_index + 1 :]:
+        record = _build_record(headers, row)
+        if record is None:
+            continue
+        data_rows.append(record)
+
+    return data_rows
 
 
 def normalize_name(value):
@@ -31,29 +88,31 @@ def normalize_name(value):
     return " ".join(str(value).strip().split()).casefold()
 
 
-def name_candidates(value):
+def split_names(value):
     if value is None:
         return []
     text = str(value).strip()
     if not text:
         return []
 
-    if ";" in text or "/" in text:
-        parts = re.split(r"[;/]", text)
-    else:
-        parts = [text]
+    if any(sep in text for sep in [";", "/", "\n", "\r"]):
+        parts = re.split(r"[;/\n\r]+", text)
+        return [part.strip() for part in parts if part and part.strip()]
 
-    names = []
-    for part in parts:
-        norm = normalize_name(part)
-        if norm:
-            names.append(norm)
+    if text.count(",") >= 3:
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) % 2 == 0:
+            paired = []
+            for i in range(0, len(parts), 2):
+                paired.append(f"{parts[i]}, {parts[i + 1]}")
+            return paired
 
-    full_norm = normalize_name(text)
-    if full_norm and full_norm not in names:
-        names.append(full_norm)
+    return [text]
 
-    return names
+
+def name_candidates(value):
+    names = split_names(value)
+    return [normalize_name(name) for name in names if name]
 
 
 def matches_name(cell_value, selected_name):
@@ -63,22 +122,17 @@ def matches_name(cell_value, selected_name):
     return target in name_candidates(cell_value)
 
 
-def extract_aufsichten(df):
+def extract_aufsichten(rows):
     seen = {}
-    for value in df["Aufsicht"]:
-        if value is None:
-            continue
-        text = str(value).strip()
-        if not text:
-            continue
-        norm = normalize_name(text)
-        if norm and norm not in seen:
-            seen[norm] = text
+    for row in rows:
+        for name in split_names(row.get("Aufsicht")):
+            norm = normalize_name(name)
+            if norm and norm not in seen:
+                seen[norm] = name
     return [seen[key] for key in sorted(seen.keys())]
 
 
-def filter_rows_by_aufsicht(df, selected_name):
-    rows = df.to_dict(orient="records")
+def filter_rows_by_aufsicht(rows, selected_name):
     return [row for row in rows if matches_name(row.get("Aufsicht"), selected_name)]
 
 
@@ -97,7 +151,28 @@ def display_value(value):
 def preview_rows(rows):
     formatted = []
     for row in rows:
-        formatted.append({key: display_value(val) for key, val in row.items()})
+        formatted_row = {}
+        for key, val in row.items():
+            if key == "Datum":
+                try:
+                    formatted_row[key] = parse_date_value(val).isoformat()
+                    continue
+                except ValueError:
+                    pass
+            if key == "Startzeit":
+                try:
+                    formatted_row[key] = parse_time_value(val).strftime("%H:%M")
+                    continue
+                except ValueError:
+                    pass
+            if key == "Dauer":
+                try:
+                    formatted_row[key] = str(parse_duration_minutes(val))
+                    continue
+                except ValueError:
+                    pass
+            formatted_row[key] = display_value(val)
+        formatted.append(formatted_row)
     return formatted
 
 
@@ -125,7 +200,7 @@ def parse_date_value(value):
             continue
 
     try:
-        return pd.to_datetime(text, dayfirst=True).date()
+        return date.fromisoformat(text)
     except Exception as exc:
         raise ValueError("Datum ungueltig") from exc
 
@@ -152,9 +227,12 @@ def parse_time_value(value):
             continue
 
     try:
-        return pd.to_datetime(text).time()
-    except Exception as exc:
-        raise ValueError("Startzeit ungueltig") from exc
+        return time.fromisoformat(text)
+    except ValueError:
+        try:
+            return datetime.fromisoformat(text).time()
+        except Exception as exc:
+            raise ValueError("Startzeit ungueltig") from exc
 
 
 def parse_duration_minutes(value):
@@ -190,10 +268,10 @@ def parse_duration_minutes(value):
 
 
 def prepare_event_data(row):
-    pruefungsname = display_value(row.get("Prüfungsname")).strip()
-    pruefer = display_value(row.get("Prüfer")).strip()
+    pruefungsname = display_value(row.get("Pr\u00fcfungsname")).strip()
+    pruefer = display_value(row.get("Pr\u00fcfer")).strip()
     aufsicht = display_value(row.get("Aufsicht")).strip()
-    abloesung = display_value(row.get("Ablösung")).strip()
+    abloesung = display_value(row.get("Abl\u00f6sung")).strip()
     raum = display_value(row.get("Raum")).strip()
 
     datum = parse_date_value(row.get("Datum"))
@@ -224,4 +302,244 @@ def row_fingerprint(event_data):
     ]
     joined = "|".join(part.strip() for part in parts)
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def _detect_header_row(rows, scan_limit=30):
+    best_index = 0
+    best_headers = []
+    best_score = -1
+
+    for index, row in enumerate(rows[:scan_limit]):
+        headers = [str(value).strip() if value is not None else "" for value in row]
+        score = sum(1 for field in EXPECTED_COLUMNS if _resolve_indices(headers, field))
+        if score > best_score:
+            best_index = index
+            best_headers = headers
+            best_score = score
+
+    return best_index, best_headers, best_score
+
+
+def _normalize_header(value):
+    text = " ".join(str(value or "").strip().split())
+    text = text.replace(" / ", "/").replace(" /", "/").replace("/ ", "/")
+    text = (
+        text.replace("\u00e4", "ae")
+        .replace("\u00f6", "oe")
+        .replace("\u00fc", "ue")
+        .replace("\u00df", "ss")
+    )
+    return text.casefold()
+
+
+def _find_indices_by_names(headers, names):
+    targets = {_normalize_header(name) for name in names}
+    indices = []
+    for idx, header in enumerate(headers):
+        if _normalize_header(header) in targets:
+            indices.append(idx)
+    return indices
+
+
+def _resolve_indices(headers, field):
+    indices = _find_indices_by_names(headers, COLUMN_ALIASES.get(field, []))
+    if indices:
+        return indices
+
+    if field == "Pr\u00fcfer":
+        return [
+            idx
+            for idx, header in enumerate(headers)
+            if _normalize_header(header).startswith("pruefer")
+        ]
+
+    if field == "Raum":
+        prefixes = ("raum", "raeume")
+        return [
+            idx
+            for idx, header in enumerate(headers)
+            if _normalize_header(header).startswith(prefixes)
+        ]
+
+    return []
+
+
+def _first_value_by_alias(headers, row, aliases):
+    for alias in aliases:
+        for idx in _find_indices_by_names(headers, [alias]):
+            value = row[idx] if idx < len(row) else None
+            if value is None:
+                continue
+            if str(value).strip():
+                return value
+    return None
+
+
+def _collect_values(headers, row, indices):
+    values = []
+    seen = set()
+    for idx in indices:
+        value = row[idx] if idx < len(row) else None
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        values.append(text)
+    return ", ".join(values) if values else None
+
+
+def _build_record(headers, row):
+    record = {}
+    for field in EXPECTED_COLUMNS:
+        aliases = COLUMN_ALIASES.get(field, [field])
+        if field == "Pr\u00fcfer":
+            indices = _resolve_indices(headers, field)
+            record[field] = _collect_values(headers, row, indices)
+            continue
+        if field == "Raum":
+            indices = _resolve_indices(headers, field)
+            record[field] = _collect_values(headers, row, indices)
+            continue
+
+        value = _first_value_by_alias(headers, row, aliases)
+        record[field] = value
+
+    if all(not str(value).strip() for value in record.values() if value is not None):
+        return None
+
+    return record
+
+
+def _load_workbook(file_path):
+    try:
+        return load_workbook(file_path, data_only=True)
+    except Exception:
+        return load_workbook(file_path, data_only=True, read_only=True, keep_links=False)
+
+
+def _read_rows_openpyxl(file_path):
+    workbook = _load_workbook(file_path)
+    sheet = workbook.active
+    return list(sheet.iter_rows(values_only=True))
+
+
+def _read_rows_fallback(file_path):
+    with zipfile.ZipFile(file_path) as archive:
+        sheet_path = _find_sheet_path(archive)
+        shared_strings = _read_shared_strings(archive)
+        xml_bytes = archive.read(sheet_path)
+
+    return _parse_sheet_rows(xml_bytes, shared_strings)
+
+
+def _find_sheet_path(archive):
+    names = set(archive.namelist())
+    if "xl/worksheets/sheet1.xml" in names:
+        return "xl/worksheets/sheet1.xml"
+
+    sheet_names = sorted(
+        name
+        for name in names
+        if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
+    )
+    if not sheet_names:
+        raise ValueError("Keine Arbeitsblaetter gefunden")
+    return sheet_names[0]
+
+
+def _read_shared_strings(archive):
+    if "xl/sharedStrings.xml" not in archive.namelist():
+        return []
+
+    xml_bytes = archive.read("xl/sharedStrings.xml")
+    root = ET.fromstring(xml_bytes)
+    strings = []
+    for si in root.findall(".//{*}si"):
+        parts = [
+            text_node.text or ""
+            for text_node in si.findall(".//{*}t")
+            if text_node.text
+        ]
+        strings.append("".join(parts))
+    return strings
+
+
+def _parse_sheet_rows(xml_bytes, shared_strings):
+    root = ET.fromstring(xml_bytes)
+    sheet_data = root.find(".//{*}sheetData")
+    if sheet_data is None:
+        return []
+
+    rows = []
+    for row in sheet_data.findall("{*}row"):
+        row_values = {}
+        for cell in row.findall("{*}c"):
+            cell_ref = cell.attrib.get("r", "")
+            col_index = _col_to_index(cell_ref)
+            if col_index is None:
+                continue
+
+            value = _read_cell_value(cell, shared_strings)
+            row_values[col_index] = value
+
+        if not row_values:
+            continue
+
+        max_idx = max(row_values)
+        row_list = [None] * (max_idx + 1)
+        for idx, value in row_values.items():
+            row_list[idx] = value
+        rows.append(row_list)
+
+    return rows
+
+
+def _read_cell_value(cell, shared_strings):
+    cell_type = cell.attrib.get("t")
+    if cell_type == "s":
+        value_node = cell.find("{*}v")
+        if value_node is None or value_node.text is None:
+            return None
+        index = int(value_node.text)
+        if index < len(shared_strings):
+            return shared_strings[index]
+        return None
+
+    if cell_type == "inlineStr":
+        text_node = cell.find(".//{*}t")
+        return text_node.text if text_node is not None else ""
+
+    value_node = cell.find("{*}v")
+    if value_node is None or value_node.text is None:
+        return None
+
+    text = value_node.text
+    if cell_type == "b":
+        return text == "1"
+
+    return _coerce_number(text)
+
+
+def _coerce_number(text):
+    try:
+        return int(text)
+    except ValueError:
+        try:
+            return float(text)
+        except ValueError:
+            return text
+
+
+def _col_to_index(cell_ref):
+    match = re.match(r"([A-Za-z]+)", cell_ref)
+    if not match:
+        return None
+
+    letters = match.group(1).upper()
+    index = 0
+    for char in letters:
+        index = index * 26 + (ord(char) - ord("A") + 1)
+    return index - 1
 

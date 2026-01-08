@@ -9,6 +9,17 @@
         <div class="mb-3">
           <input class="form-control" type="file" name="file" accept=".xlsx" required>
         </div>
+        <div class="mb-3">
+          <label class="form-label">Kalendername</label>
+          <input
+            class="form-control"
+            type="text"
+            name="calendar_name"
+            value="{{ calendar_name }}"
+            placeholder="{{ default_calendar_name }}"
+          >
+          <div class="form-text">Leer lassen fuer Standard: {{ default_calendar_name }}</div>
+        </div>
         <button class="btn btn-primary" type="submit">Upload</button>
       </form>
     </div>
