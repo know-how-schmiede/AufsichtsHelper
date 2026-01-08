@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Bitte als root ausfuehren."
+  exit 1
+fi
+
+echo "Dieses Script aktualisiert AufsichtsHelper und startet den Service neu."
+echo
+
+prompt() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local default_value="$3"
+  local input=""
+  read -r -p "${prompt_text} [${default_value}]: " input
+  if [ -z "$input" ]; then
+    input="$default_value"
+  fi
+  printf -v "$var_name" "%s" "$input"
+}
+
+prompt APP_DIR "Installationsverzeichnis" "/opt/aufsichtshelper"
+prompt SERVICE_NAME "Service-Name" "aufsichtshelper"
+
+if [ ! -d "$APP_DIR/.git" ]; then
+  echo "Kein Git-Repo in $APP_DIR gefunden."
+  exit 1
+fi
+
+APP_PY="$APP_DIR/.venv/bin/python"
+if [ ! -x "$APP_PY" ]; then
+  echo "Kein venv gefunden. Bitte zuerst setupAufsichtsHelper ausfuehren."
+  exit 1
+fi
+
+systemctl stop "$SERVICE_NAME" || true
+
+git -C "$APP_DIR" pull --ff-only
+"$APP_PY" -m pip install -r "$APP_DIR/requirements.txt"
+pushd "$APP_DIR" >/dev/null
+"$APP_PY" -m flask --app run.py db upgrade
+popd >/dev/null
+
+systemctl start "$SERVICE_NAME"
+
+echo
+echo "Update abgeschlossen. Status:"
+systemctl status --no-pager "$SERVICE_NAME"

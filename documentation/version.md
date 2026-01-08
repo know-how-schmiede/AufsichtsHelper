@@ -8,6 +8,10 @@ Die aktuelle App-Version wird in `app/VERSION` gepflegt.
 
 ## Historie
 
+### Version 0.1.20
+
+- Setup: Debian 13 LXC Installationsskripte und Anleitung im setup/ Ordner
+
 ### Version 0.1.19
 
 - Upload: Kalendername setzen (Default: Prüfungsaufsicht_<Jahr>)

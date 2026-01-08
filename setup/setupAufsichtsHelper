@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Bitte als root ausfuehren."
+  exit 1
+fi
+
+echo "Dieses Script installiert AufsichtsHelper in einem Debian 13 LXC-Container."
+echo "Es installiert Abhaengigkeiten, richtet eine venv ein und initialisiert die Datenbank."
+echo
+
+prompt() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local default_value="$3"
+  local input=""
+  read -r -p "${prompt_text} [${default_value}]: " input
+  if [ -z "$input" ]; then
+    input="$default_value"
+  fi
+  printf -v "$var_name" "%s" "$input"
+}
+
+prompt REPO_URL "Repo URL" "https://github.com/know-how-schmiede/AufsichtsHelper"
+prompt APP_DIR "Installationsverzeichnis" "/opt/aufsichtshelper"
+prompt APP_USER "Linux-User fuer den Service" "aufsichtshelper"
+prompt APP_BASE_URL "APP_BASE_URL" "http://localhost:5000"
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y git python3 python3-venv python3-pip
+
+if ! id "$APP_USER" >/dev/null 2>&1; then
+  adduser --system --group --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
+fi
+
+mkdir -p "$(dirname "$APP_DIR")"
+
+if [ -d "$APP_DIR/.git" ]; then
+  echo "Repo vorhanden, aktualisiere..."
+  git -C "$APP_DIR" pull --ff-only
+else
+  if [ -d "$APP_DIR" ] && [ -n "$(ls -A "$APP_DIR")" ]; then
+    echo "Verzeichnis $APP_DIR ist nicht leer. Bitte anderes Verzeichnis waehlen."
+    exit 1
+  fi
+  git clone "$REPO_URL" "$APP_DIR"
+fi
+
+python3 -m venv "$APP_DIR/.venv"
+"$APP_DIR/.venv/bin/pip" install --upgrade pip
+"$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+
+if [ ! -f "$APP_DIR/.env" ]; then
+  cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+  SECRET_KEY="$("$APP_DIR/.venv/bin/python" - <<'PY'
+import secrets
+print(secrets.token_hex(32))
+PY
+)"
+  sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${SECRET_KEY}/" "$APP_DIR/.env"
+  sed -i "s|^APP_BASE_URL=.*|APP_BASE_URL=${APP_BASE_URL}|" "$APP_DIR/.env"
+fi
+
+mkdir -p "$APP_DIR/instance/uploads" "$APP_DIR/instance/exports"
+
+pushd "$APP_DIR" >/dev/null
+APP_PY="$APP_DIR/.venv/bin/python"
+if [ ! -f "$APP_DIR/migrations/env.py" ]; then
+  "$APP_PY" -m flask --app run.py db init
+fi
+"$APP_PY" -m flask --app run.py db upgrade
+"$APP_PY" - <<'PY'
+from app import create_app
+app = create_app()
+print("App geladen:", app.name)
+PY
+popd >/dev/null
+
+chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+
+echo
+echo "Setup abgeschlossen."
+echo "Testlauf:"
+echo "  cd $APP_DIR"
+echo "  source .venv/bin/activate"
+echo "  flask --app run.py run --host 0.0.0.0 --port 5000"
+echo
+echo "Danach Service installieren:"
+echo "  $APP_DIR/setup/setupAufsichtsHelperService"
