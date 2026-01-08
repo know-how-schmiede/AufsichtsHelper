@@ -1,0 +1,41 @@
+﻿{% extends 'base.html' %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Personen</h1>
+    <a class="btn btn-primary" href="{{ url_for('persons.create_person') }}">Neu</a>
+  </div>
+
+  {% if persons %}
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>E-Mail</th>
+            <th>Aktiv</th>
+            <th class="text-end">Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in persons %}
+            <tr>
+              <td>{{ person.name }}</td>
+              <td>{{ person.email or '' }}</td>
+              <td>{{ 'Ja' if person.active else 'Nein' }}</td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('persons.edit_person', person_id=person.id) }}">Bearbeiten</a>
+                <form method="post" action="{{ url_for('persons.delete_person', person_id=person.id) }}" class="d-inline">
+                  <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('Person wirklich loeschen?');">Loeschen</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-info">Keine Personen vorhanden.</div>
+  {% endif %}
+{% endblock %}
+

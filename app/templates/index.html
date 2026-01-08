@@ -1,0 +1,17 @@
+﻿{% extends 'base.html' %}
+
+{% block content %}
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h1 class="h4 mb-3">Excel-Upload</h1>
+      <p class="text-muted">Erwartete Spalten: Prüfungsname, Datum, Startzeit, Dauer, Prüfer, Aufsicht, Ablösung, Raum.</p>
+      <form method="post" enctype="multipart/form-data">
+        <div class="mb-3">
+          <input class="form-control" type="file" name="file" accept=".xlsx" required>
+        </div>
+        <button class="btn btn-primary" type="submit">Upload</button>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+

@@ -1,0 +1,16 @@
+﻿{% extends 'base.html' %}
+
+{% block content %}
+  <div class="alert alert-danger">
+    <h1 class="h5">{{ title }}</h1>
+    <p>{{ message }}</p>
+    {% if missing %}
+      <ul>
+        {% for col in missing %}
+          <li>{{ col }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endblock %}
+

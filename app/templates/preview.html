@@ -1,0 +1,76 @@
+﻿{% extends 'base.html' %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Vorschau</h1>
+    <span class="badge bg-secondary">Gesamt: {{ total_rows }}</span>
+  </div>
+
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-md-6">
+      <label class="form-label">Aufsicht</label>
+      <select class="form-select" name="aufsicht" required>
+        {% for name in aufsicht_names %}
+          <option value="{{ name }}" {% if name == selected_aufsicht %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <button class="btn btn-outline-primary" type="submit">Filtern</button>
+    </div>
+  </form>
+
+  <div class="mb-3 text-muted">
+    Gefilterte Zeilen: {{ filtered_count }}
+  </div>
+
+  {% if missing_contacts %}
+    <div class="alert alert-warning">
+      <strong>Fehlende Stammdaten oder E-Mail:</strong>
+      <ul class="mb-0">
+        {% for item in missing_contacts %}
+          <li>{{ item.name }} - {{ item.reason }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <form method="post" action="{{ url_for('main.send') }}">
+        <input type="hidden" name="aufsicht" value="{{ selected_aufsicht }}">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="force_resend" value="1" id="forceResend">
+          <label class="form-check-label" for="forceResend">Erneut senden (Force resend)</label>
+        </div>
+        <button class="btn btn-success" type="submit">Einladungen senden</button>
+      </form>
+    </div>
+  </div>
+
+  {% if preview_rows %}
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle">
+        <thead>
+          <tr>
+            {% for col in expected_columns %}
+              <th>{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in preview_rows %}
+            <tr>
+              {% for col in expected_columns %}
+                <td>{{ row[col] }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-info">Keine Zeilen gefunden.</div>
+  {% endif %}
+{% endblock %}
+

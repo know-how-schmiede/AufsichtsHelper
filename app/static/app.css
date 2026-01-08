@@ -1,0 +1,16 @@
+﻿body {
+  background-color: #f7f7f8;
+}
+
+.card {
+  border-radius: 0.75rem;
+}
+
+.table thead th {
+  white-space: nowrap;
+}
+
+.footer {
+  background-color: #ffffff;
+  border-top: 1px solid #e5e5e5;
+}
