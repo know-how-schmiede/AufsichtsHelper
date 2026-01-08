@@ -8,6 +8,18 @@ Die aktuelle App-Version wird in `app/VERSION` gepflegt.
 
 ## Historie
 
+### Version 0.1.33
+
+- Setup: Hinweis zu safe.directory in setup/README.md
+
+### Version 0.1.32
+
+- Setup: Install-Script setzt git safe.directory bei root
+
+### Version 0.1.31
+
+- Setup: Update-Script setzt git safe.directory bei root
+
 ### Version 0.1.30
 
 - Vorschau: Anzahl der Aufsichts-Namen im Label angezeigt

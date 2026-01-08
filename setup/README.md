@@ -26,6 +26,7 @@ chmod +x setupAufsichtsHelper setupAufsichtsHelperService updateAufsichtsHelperS
 ```
 
 Das Script fragt nach ein paar Parametern und nutzt Standardwerte, wenn nichts eingegeben wird.
+Bei root setzt es automatisch `safe.directory` fuer das Repo.
 
 Falls GitHub nach einem Passwort fragt, ist etwas mit der URL oder dem Terminal-Input schiefgelaufen.
 Nimm die .git-URL und nutze optional:

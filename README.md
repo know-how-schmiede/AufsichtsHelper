@@ -53,6 +53,10 @@ bitte den Ordner loeschen und `db init` erneut ausfuehren.
 python -m flask --app run.py run
 ```
 
+## Debian 13 LXC Setup
+Siehe `setup/README.md` fuer die Installation per Skript.
+Bei root setzt das Skript automatisch `safe.directory` fuer das Repo.
+
 ## Excel-Format
 Erwartete Felder (interne Namen):
 - "Prüfungsname"

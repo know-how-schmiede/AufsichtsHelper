@@ -39,6 +39,7 @@ mkdir -p "$(dirname "$APP_DIR")"
 
 if [ -d "$APP_DIR/.git" ]; then
   echo "Repo vorhanden, aktualisiere..."
+  git config --global --add safe.directory "$APP_DIR"
   GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false git -C "$APP_DIR" pull --ff-only
 else
   if [ -d "$APP_DIR" ] && [ -n "$(ls -A "$APP_DIR")" ]; then
@@ -46,6 +47,7 @@ else
     exit 1
   fi
   GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false git clone "$REPO_URL" "$APP_DIR"
+  git config --global --add safe.directory "$APP_DIR"
 fi
 
 python3 -m venv "$APP_DIR/.venv"
